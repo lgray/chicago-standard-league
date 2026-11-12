@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    ignore:
+      # Stay on a Node LTS line; move to the next even major by hand.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
