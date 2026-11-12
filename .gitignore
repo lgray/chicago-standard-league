@@ -1,0 +1,5 @@
+data/
+.env
+node_modules/
+.claude/settings.local.json
+deploy/local/
