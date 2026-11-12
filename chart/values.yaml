@@ -1,0 +1,41 @@
+image:
+  repository: ghcr.io/lgray/chicago-standard-league
+  tag: ""          # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Registry-free mode: name a ConfigMap holding package.json, src/*.js and public/* (flat keys) and the
+# pod runs that source on a stock Node image (set image.repository=node, image.tag=24-alpine).
+sourceConfigMap: ""
+
+# Codes players / organizers type into the forms. Set both, or point existingSecret at a
+# Secret that has LEAGUE_CODE and ADMIN_CODE keys.
+leagueCode: ""
+adminCode: ""
+existingSecret: ""
+
+demoBanner: false   # show the "prototype / demo data" banner
+
+ingress:
+  enabled: true
+  className: ""
+  host: ""          # required, e.g. league.example.com
+  # Controller-specific settings go here (cert-manager issuer, Traefik entrypoints, ...).
+  # The app accepts uploads up to 8 MB; raise the proxy body limit if your controller's is lower.
+  annotations: {}
+  tls: true         # uses secret <release>-tls (cert-manager fills it)
+
+# ndots:1 because the app only resolves external hosts (Scryfall, Archidekt). With the Kubernetes default of 5,
+# Alpine's resolver gives up when a cluster search domain returns an empty answer.
+dnsConfig:
+  options:
+    - { name: ndots, value: "1" }
+
+persistence:
+  size: 5Gi
+  storageClass: ""
+  existingClaim: ""
+
+resources:
+  requests: { cpu: 20m, memory: 64Mi }
+  limits: { memory: 256Mi }

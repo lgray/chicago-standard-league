@@ -1,0 +1,154 @@
+{{- $name := .Release.Name -}}
+{{- $labels := dict "app.kubernetes.io/name" .Chart.Name "app.kubernetes.io/instance" $name -}}
+{{- $secret := .Values.existingSecret | default $name -}}
+{{- if not .Values.existingSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels: {{- toYaml $labels | nindent 4 }}
+stringData:
+  LEAGUE_CODE: {{ required "leagueCode is required (or set existingSecret)" .Values.leagueCode | quote }}
+  ADMIN_CODE: {{ required "adminCode is required (or set existingSecret)" .Values.adminCode | quote }}
+---
+{{- end }}
+{{- if not .Values.persistence.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  labels: {{- toYaml $labels | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {{- toYaml $labels | nindent 4 }}
+spec:
+  # SQLite on a ReadWriteOnce volume: exactly one pod, and the old one must exit before the new one starts.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {{- toYaml $labels | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- toYaml $labels | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: web
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          {{- if .Values.sourceConfigMap }}
+          command: [node, /app/src/server.js]
+          {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ $secret }}
+          env:
+            - { name: DATA_DIR, value: /data }
+            - { name: PORT, value: "8080" }
+            {{- if .Values.demoBanner }}
+            - { name: DEMO, value: "1" }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            {{- if .Values.sourceConfigMap }}
+            - name: app
+              mountPath: /app
+            {{- end }}
+      volumes:
+        {{- if .Values.sourceConfigMap }}
+        - name: app
+          configMap:
+            name: {{ .Values.sourceConfigMap }}
+            items:
+              - { key: package.json, path: package.json }
+              - { key: server.js, path: src/server.js }
+              - { key: lib.js, path: src/lib.js }
+              - { key: decks.js, path: src/decks.js }
+              - { key: style.css, path: public/style.css }
+              - { key: app.js, path: public/app.js }
+              - { key: rules.html, path: public/rules.html }
+        {{- end }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default $name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- toYaml $labels | nindent 4 }}
+spec:
+  selector: {{- toYaml $labels | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- if .Values.ingress.enabled }}
+{{- $host := required "ingress.host is required (or set ingress.enabled=false)" .Values.ingress.host }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels: {{- toYaml $labels | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ $name }}-tls
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  name: http
+{{- end }}

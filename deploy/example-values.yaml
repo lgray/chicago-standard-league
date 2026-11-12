@@ -1,0 +1,11 @@
+# Example: Traefik ingress with a cert-manager issuer, running the published image.
+# Copy to deploy/local/ (git-ignored), edit, and pass it as VALUES=... to `make deploy`.
+ingress:
+  className: traefik
+  host: league.example.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+
+# To run without a registry, uncomment these and use `make deploy-source` instead:
+# image: { repository: node, tag: 24-alpine }
+# sourceConfigMap: csl-app
