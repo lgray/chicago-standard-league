@@ -66,11 +66,11 @@ source mounted from a ConfigMap, because no image had been pushed to a registry 
 - Not built: archetype suggestion from a list; screenshot OCR (deferred by the owner to a later app).
 
 ## Repository and CI
-2026-11-12. Published as private repo `lgray/chicago-standard-league`.
+2026-11-12. Published as public repo `lgray/chicago-standard-league` (owner's choice).
 - CI builds the image and pushes it to `ghcr.io/lgray/chicago-standard-league` (amd64 + arm64); chart default
   image moved there from Docker Hub, where nothing was ever pushed.
-- The live site was not redeployed and still runs source mode. Moving it to the image needs a pull secret in
-  the cluster or a public package.
+- The live site was not redeployed and still runs source mode. The GHCR package was created while the repo was
+  private, so it stays private until its visibility is changed in the package settings (GitHub has no API for it).
 - Node 22.13 rejects a reused numbered SQL parameter (`?1` twice) with "column index out of range"; newer 22.x
   and 24 accept it. CI's minimum-version job found it; queries now use plain `?`.
 - No JS linter or formatter: the code is dependency-free and adding one means adding a toolchain. Hooks cover

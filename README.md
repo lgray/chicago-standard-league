@@ -43,8 +43,8 @@ make deploy-source VALUES=deploy/local/values.yaml       # no registry: runs the
 ```
 
 - **Image**: CI publishes `ghcr.io/lgray/chicago-standard-league` for amd64 and arm64 (`:main` on every push to
-  main, `:<version>` on release tags). The chart defaults to the tag matching its `appVersion`. While the
-  repository is private the package is too, so set `imagePullSecrets`. To build your own: `make image`.
+  main, `:<version>` on release tags). The chart defaults to the tag matching its `appVersion`. If the package
+  is not public, set `imagePullSecrets`. To build your own: `make image`.
 - **Source mode**: set `sourceConfigMap` and a stock Node image in the values file (see `deploy/example-values.yaml`).
   `make deploy-source` uploads the source as that ConfigMap and restarts the pod.
 - **Values**: `chart/values.yaml` documents every setting; `ingress.host` is the only one without a default.

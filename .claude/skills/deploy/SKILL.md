@@ -33,7 +33,7 @@ echoing them. Never put them in a values file or a commit.
   pod. No image or registry involved, so it ships whatever is in the working tree — check `git status` first.
 - **Image mode** (default chart values): `make deploy VALUES=<file>`. Uses
   `ghcr.io/lgray/chicago-standard-league:<chart appVersion>`; set `image.tag=main` for the latest main build.
-  The package is private while the repository is, so the cluster needs `imagePullSecrets`.
+  If the GHCR package is not public, the cluster needs `imagePullSecrets`.
 
 `VALUES` is required; `RELEASE`, `NAMESPACE` and `SOURCE_CM` default to `csl`, `csl` and `csl-app`.
 Preview without changing anything: `make -n deploy-source VALUES=<file>`, or add `--dry-run=server` to the Helm command.
