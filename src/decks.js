@@ -98,7 +98,7 @@ async function scryfall(names) {
     const res = await getJson('https://api.scryfall.com/cards/collection', { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ identifiers: batch.map((name) => ({ name })) }) });
     const missing = new Set(res.not_found.map((x) => x.name.toLowerCase()));
-    batch.filter((n) => !missing.has(n)).forEach((n, j) => cards.set(n, res.data[j])); // data keeps request order
+    batch.filter((n) => !missing.has(n)).forEach((n, j) => { cards.set(n, res.data[j]); }); // data keeps request order
   }
   return cards;
 }

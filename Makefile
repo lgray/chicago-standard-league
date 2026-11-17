@@ -24,7 +24,7 @@ seed: ## Fill an empty database with demo data
 test: ## Unit tests
 	node --test
 
-lint: ## Pre-commit hooks on all files (whitespace, YAML, workflow lint)
+lint: ## Pre-commit hooks on all files (whitespace, YAML/JSON, workflow lint, Biome for JS/CSS)
 	$(PREK) run --all-files
 
 chart: ## Lint the chart and render it with the example values

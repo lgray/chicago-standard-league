@@ -300,12 +300,12 @@ function qrPage(url, origin) {
 // ---------- writes ----------
 const same = (a, b) => timingSafeEqual(...[a, b].map((s) => createHash('sha256').update(String(s)).digest()));
 const text = (form, k, max) => String(form.get(k) ?? '').trim().slice(0, max);
-const count = (form, k) => Math.min(15, Math.max(0, parseInt(form.get(k)) || 0));
+const count = (form, k) => Math.min(15, Math.max(0, parseInt(form.get(k), 10) || 0));
 const clean = (name) => name.trim().replace(/\s+/g, ' ').slice(0, 40);
 
 function eventId(form) {
   const date = text(form, 'date', 10), store = text(form, 'store', 60).replace(/\s+/g, ' ');
-  if (!/^\d{4}-\d\d-\d\d$/.test(date) || isNaN(Date.parse(date)) || date > today()) throw 'Pick a valid event date that isn’t in the future.';
+  if (!/^\d{4}-\d\d-\d\d$/.test(date) || Number.isNaN(Date.parse(date)) || date > today()) throw 'Pick a valid event date that isn’t in the future.';
   if (!store) throw 'Tell us which store the event was at.';
   // Match an existing store case-insensitively so one typo'd capital doesn't split an event.
   return db.prepare(`INSERT INTO events (date, store, store_key) VALUES (?, ?, ?)
@@ -379,8 +379,11 @@ async function report(form) {
 
 function admin(form) {
   if (!same(form.get('code'), ADMIN_CODE)) throw 'Wrong admin code.';
-  if (form.get('del_entry')) return db.prepare('DELETE FROM entries WHERE id = ?').run(form.get('del_entry')), '/admin';
-  if (form.get('del_photo')) return db.prepare('DELETE FROM photos WHERE id = ?').run(form.get('del_photo')), '/admin';
+  for (const [field, table] of [['del_entry', 'entries'], ['del_photo', 'photos']]) {
+    if (!form.get(field)) continue;
+    db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(form.get(field));
+    return '/admin';
+  }
   const entry = (event, name) => db.prepare(`INSERT INTO entries (event_id, player, player_key, wins, losses, draws) VALUES (?, ?, ?, 0, 0, 0)
     ON CONFLICT (event_id, player_key) DO UPDATE SET player = player RETURNING id`).get(event, clean(name), key(clean(name))).id;
 

@@ -59,7 +59,7 @@ for (let week = 0; week < 9; week++) {
   }
   for (const [i, p] of field.entries()) {
     const fields = { code: process.env.LEAGUE_CODE, date, store, player: p.name, archetype: p.deck[0] };
-    if (rnd() < .75) p.rounds.forEach(([opp, res], r) => Object.assign(fields, { [`opp${r}`]: opp, [`res${r}`]: res }));
+    if (rnd() < .75) p.rounds.forEach(([opp, res], r) => { Object.assign(fields, { [`opp${r}`]: opp, [`res${r}`]: res }); });
     else Object.assign(fields, { wins: p.rounds.filter((r) => r[1] === 'W').length, losses: p.rounds.filter((r) => r[1] === 'L').length });
     if (LISTS[p.deck[0]] && rnd() < .7) fields.decklist = LISTS[p.deck[0]].join('\n');
     const pic = i === 0 && week > 2 ? photo(`${store}`, week * 40) : null;

@@ -14,3 +14,9 @@ repos:
     rev: v1.7.12
     hooks:
       - id: actionlint
+  - repo: https://github.com/biomejs/pre-commit
+    rev: v2.6.8
+    hooks:
+      - id: biome-lint
+        additional_dependencies: ["@biomejs/biome@2.6.8"]
+        files: \.(js|css|json)$ # its YAML parser cannot read Helm templates

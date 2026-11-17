@@ -100,9 +100,10 @@ export function parsePairings(text) {
   const out = [];
   for (const raw of text.split('\n')) {
     const line = raw.trim().replace(/^(?:table\s*)?\d+[.):]?\s+/i, '');
-    let m = line.match(/^(.+?)\s+(?:vs?\.?|\|)\s+(.+?)\s+(\d)\s*[-–]\s*(\d)(?:\s*[-–]\s*\d)?$/i);
+    const m = line.match(/^(.+?)\s+(?:vs?\.?|\|)\s+(.+?)\s+(\d)\s*[-–]\s*(\d)(?:\s*[-–]\s*\d)?$/i);
     if (m) out.push({ a: m[1].trim(), b: m[2].trim(), result: +m[3] > +m[4] ? 'W' : +m[3] < +m[4] ? 'L' : 'D' });
-    else if ((m = line.match(/^(.+?)\s+(?:vs?\.?\s+)?\W*bye\W*$/i))) out.push({ a: m[1].trim(), b: null, result: 'W' });
+    const bye = !m && line.match(/^(.+?)\s+(?:vs?\.?\s+)?\W*bye\W*$/i);
+    if (bye) out.push({ a: bye[1].trim(), b: null, result: 'W' });
   }
   return out;
 }
