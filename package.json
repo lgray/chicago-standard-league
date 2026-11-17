@@ -1,6 +1,7 @@
 {
   "name": "chicago-standard-league",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "engines": { "node": ">=22.13" },
   "scripts": { "start": "node src/server.js", "test": "node --test", "seed": "node seed.js" }
