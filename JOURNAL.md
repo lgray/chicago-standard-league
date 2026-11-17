@@ -73,6 +73,7 @@ source mounted from a ConfigMap, because no image had been pushed to a registry 
   private, so it stays private until its visibility is changed in the package settings (GitHub has no API for it).
 - Node 22.13 rejects a reused numbered SQL parameter (`?1` twice) with "column index out of range"; newer 22.x
   and 24 accept it. CI's minimum-version job found it; queries now use plain `?`.
-- No JS linter or formatter: the code is dependency-free and adding one means adding a toolchain. Hooks cover
-  whitespace, YAML/JSON and workflow lint only.
-- No licence file yet; that choice is the owner's.
+- JS/CSS lint is Biome, run as a pre-commit hook so the project still has no npm dependencies. No formatter:
+  it would rewrite the dense house style. `noDescendingSpecificity` is off (flat stylesheet, unrelated components).
+- `main` is protected (PR required, `required` status check, no force-push or deletion; admins may bypass).
+- MIT licence, chosen by the owner 2026-11-17.

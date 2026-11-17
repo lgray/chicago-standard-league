@@ -59,14 +59,15 @@ make deploy-source VALUES=deploy/local/values.yaml       # no registry: runs the
 
 ```sh
 make test          # unit tests (node --test)
-make lint          # pre-commit hooks via prek; `prek install` runs them on every commit
+make lint          # pre-commit hooks via prek (incl. Biome for JS/CSS); `prek install` runs them on every commit
 make chart         # helm lint + render
 make image smoke   # build the container and check it serves
 ```
 
 CI (`.github/workflows/ci.yml`) runs those targets on every pull request and push, on the minimum supported
 Node and the one the image ships, then seeds demo data through the real request handler and builds the image.
-Actions are pinned by commit and kept current by Dependabot.
+Actions are pinned by commit and kept current by Dependabot. `main` is protected: changes go through a pull
+request and merge once the `required` check, which gathers every CI job, is green.
 
 To release: set `version` and `appVersion` in `chart/Chart.yaml`, merge, then push tag `v<appVersion>`.
 
@@ -86,3 +87,7 @@ orient AI coding agents; `JOURNAL.md` records the research and decisions behind 
 - Wizards publishes no API or export for Companion/EventLink, so there is nothing to scrape; see `JOURNAL.md`.
 
 Outbound calls identify themselves with `USER_AGENT` (default `mtg-league-site/0.1`).
+
+## License
+
+[MIT](LICENSE) for the code. Photos, decklists and results belong to the players who submitted them.

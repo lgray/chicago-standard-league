@@ -99,3 +99,17 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
+
+  # The one check branch protection requires. A job skipped because its dependency failed would otherwise
+  # count as passing.
+  required:
+    if: always()
+    needs: [lint, test, chart, image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          ! grep -qE 'failure|cancelled|skipped' <<< "$RESULTS"

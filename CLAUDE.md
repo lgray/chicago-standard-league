@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 make test                                   # node --test
 node --test test/decks.test.js              # one file
 node --test --test-name-pattern='matrix'    # one test by name
-make lint                                   # prek hooks: whitespace, YAML/JSON, actionlint
+make lint                                   # prek hooks: whitespace, YAML/JSON, actionlint, Biome (JS/CSS)
 make chart                                  # helm lint + render with deploy/example-values.yaml
 make image smoke                            # build the container, start it, fetch three pages
 make run                                    # http://localhost:8080, codes from .env
@@ -67,6 +67,8 @@ the network (`checkDeck` takes an injectable `lookup`; the seed sets `NO_CARD_CH
 
 ## Conventions
 
+- `main` is protected: changes land through a pull request whose `required` check (all CI jobs) is green.
+- Biome lints only; there is no formatter, so match the surrounding style by hand.
 - Conventional commits. A release is a `v<appVersion>` tag matching `chart/Chart.yaml`; CI fails the tag otherwise.
 - `ponytail:` comments mark deliberate shortcuts and name the ceiling and the upgrade path. Keep them accurate
   when touching that code; `/ponytail-debt` lists them.
