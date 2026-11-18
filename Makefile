@@ -35,7 +35,7 @@ image: ## Build the container image as $(IMAGE)
 	docker build -t $(IMAGE) .
 
 smoke: ## Start $(IMAGE) and check that it serves pages
-	docker run -d --rm --name csl-smoke -p 127.0.0.1:18080:8080 -e LEAGUE_CODE=smoke -e ADMIN_CODE=smoke $(IMAGE)
+	docker run -d --rm --name csl-smoke -p 127.0.0.1:18080:8080 -e LEAGUE_CODE=smoke -e ADMIN_CODE=smoke-admin-code $(IMAGE)
 	curl -fsS --retry 10 --retry-all-errors --retry-delay 1 http://127.0.0.1:18080/healthz http://127.0.0.1:18080/ http://127.0.0.1:18080/report > /dev/null; \
 	  status=$$?; docker rm -f csl-smoke > /dev/null; exit $$status
 

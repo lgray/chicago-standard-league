@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDeck, formatDeck, importable, checkDeck, SITES } from '../src/decks.js';
+import { parseDeck, formatDeck, importable, fetchDeck, checkDeck, SITES } from '../src/decks.js';
 import { parsePairings } from '../src/lib.js';
 
 test('parseDeck: Arena export with sections, set codes and a companion', () => {
@@ -60,4 +60,16 @@ test('parsePairings: table numbers, game scores, draws, byes, junk', () => {
   assert.deepEqual(parsePairings('Table Players Result\n1 Jane Q. Doe vs Bob Smith 2-1\nTable 2: Ann v. Cy 0–2\nDee | Eve 1-1-1\n4 Fay bye\nGus vs *** BYE ***\nnothing here'), [
     { a: 'Jane Q. Doe', b: 'Bob Smith', result: 'W' }, { a: 'Ann', b: 'Cy', result: 'L' }, { a: 'Dee', b: 'Eve', result: 'D' },
     { a: 'Fay', b: null, result: 'W' }, { a: 'Gus', b: null, result: 'W' }]);
+});
+
+test('parsers cut a line before matching it, so a run of spaces cannot stall them', () => {
+  assert.deepEqual(parseDeck(`1 a${' '.repeat(20000)}b`).main, [{ qty: 1, name: 'a' }]);
+  assert.deepEqual(parsePairings(`a${' '.repeat(800)}vs b 2-1`), []);
+});
+
+test('fetchDeck: an imported deck is capped at the same row count as a pasted one', async (t) => {
+  const cards = Array.from({ length: 1000 }, (_, i) => ({ quantity: 1, card: { oracleCard: { name: `Card ${i}` } }, categories: i % 2 ? ['Sideboard'] : [] }));
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ categories: [], cards }));
+  const deck = await fetchDeck('https://archidekt.com/decks/1/x');
+  assert.deepEqual([deck.main.length, deck.side.length, deck.main[0]], [400, 400, { qty: 1, name: 'Card 0' }]);
 });

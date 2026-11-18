@@ -40,7 +40,7 @@ jobs:
         run: make seed
         env:
           LEAGUE_CODE: ci-league
-          ADMIN_CODE: ci-admin
+          ADMIN_CODE: ci-admin-code
           DATA_DIR: ${{ runner.temp }}/data
 
   chart:

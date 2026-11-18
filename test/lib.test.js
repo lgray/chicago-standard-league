@@ -49,3 +49,7 @@ test('parseStandings handles rank, points column, tabs, and junk lines', () => {
     { player: 'Carl', wins: 1, losses: 2, draws: 0 },
   ]);
 });
+
+test('parseStandings cuts a line before matching it', () => {
+  assert.deepEqual(parseStandings(`a${' '.repeat(20000)}3-0`), []);
+});

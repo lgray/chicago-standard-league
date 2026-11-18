@@ -8,7 +8,7 @@ description: Start the league site locally with seeded demo data and check that 
 Use a throwaway database so `./data` (the developer's own local data) is left alone.
 
 ```sh
-export LEAGUE_CODE=dev-league ADMIN_CODE=dev-admin DEMO=1 PORT=8090 DATA_DIR=$(mktemp -d)
+export LEAGUE_CODE=dev-league ADMIN_CODE=dev-admin-code DEMO=1 PORT=8090 DATA_DIR=$(mktemp -d)
 node seed.js                 # prints "Seeded { events: 9, entries: 91, ... }"
 node src/server.js           # run in the background; logs "Chicago Standard League on http://localhost:$PORT"
 ```

@@ -29,7 +29,9 @@ make run    # http://localhost:8080
 ```
 
 `LEAGUE_CODE` gates reporting (share it in the league Discord); `ADMIN_CODE` gates `/admin`
-(import standings or pairings, delete entries/photos). `DEMO=1` shows the demo-data banner.
+(import standings or pairings, delete entries/photos). The server refuses to start unless `ADMIN_CODE` is at
+least 12 characters and differs from `LEAGUE_CODE`: nothing throttles guesses, so make it long and random and
+add a rate limit at your ingress if you can. `DEMO=1` shows the demo-data banner.
 `make help` lists every target.
 
 ## Deploy on Kubernetes
