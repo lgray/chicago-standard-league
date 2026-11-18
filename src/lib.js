@@ -7,6 +7,9 @@ export const SEASONS = [
 export const seasonFor = (date) =>
   SEASONS.findLast((s) => s.start <= date) ?? SEASONS[0];
 
+// A message meant for the person who submitted the form; anything else thrown is a bug and becomes a 500.
+export class UserError extends Error {}
+
 export const key = (s) => s.trim().replace(/\s+/g, ' ').toLowerCase();
 
 // Wilson score interval: stays inside [0,1] and is honest at the tiny sample sizes a local league has.
@@ -84,11 +87,14 @@ export function matrix(rounds) {
   return cells;
 }
 
+// The line patterns here and in decks.js backtrack polynomially on long runs of spaces, so no line reaches them uncut.
+export const cutLines = (text) => text.split('\n').map((line) => line.slice(0, 200));
+
 // Lenient parser for standings pasted from EventLink/Companion or typed by a TO:
 // "[rank] Name [points] W-L[-D] ...anything".
 export function parseStandings(text) {
   const out = [];
-  for (const line of text.split('\n')) {
+  for (const line of cutLines(text)) {
     const m = line.match(/^\s*(?:\d+[.)]?\s+)?(\S.*?)\s+(?:\d+\s+)?(\d+)\s*[-–/]\s*(\d+)(?:\s*[-–/]\s*(\d+))?/);
     if (m) out.push({ player: m[1].trim(), wins: +m[2], losses: +m[3], draws: +(m[4] ?? 0) });
   }
@@ -98,7 +104,7 @@ export function parseStandings(text) {
 // One match per line: "[table] Player A vs Player B 2-1" (games for A, then B) or "Player C bye".
 export function parsePairings(text) {
   const out = [];
-  for (const raw of text.split('\n')) {
+  for (const raw of cutLines(text)) {
     const line = raw.trim().replace(/^(?:table\s*)?\d+[.):]?\s+/i, '');
     const m = line.match(/^(.+?)\s+(?:vs?\.?|\|)\s+(.+?)\s+(\d)\s*[-–]\s*(\d)(?:\s*[-–]\s*\d)?$/i);
     if (m) out.push({ a: m[1].trim(), b: m[2].trim(), result: +m[3] > +m[4] ? 'W' : +m[3] < +m[4] ? 'L' : 'D' });

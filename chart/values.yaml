@@ -9,7 +9,8 @@ imagePullSecrets: []
 sourceConfigMap: ""
 
 # Codes players / organizers type into the forms. Set both, or point existingSecret at a
-# Secret that has LEAGUE_CODE and ADMIN_CODE keys.
+# Secret that has LEAGUE_CODE and ADMIN_CODE keys. The app refuses to start unless the admin code is at
+# least 12 characters and differs from the league code: nothing throttles guesses.
 leagueCode: ""
 adminCode: ""
 existingSecret: ""

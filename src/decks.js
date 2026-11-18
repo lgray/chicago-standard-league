@@ -1,6 +1,9 @@
 // Decklists: text parsing, import from deck sites, and a Scryfall sanity check.
 
+import { UserError, cutLines } from './lib.js';
+
 const UA = process.env.USER_AGENT || 'mtg-league-site/0.1';
+const MAX_ROWS = 400;
 const SECTIONS = { deck: 'main', main: 'main', mainboard: 'main', maindeck: 'main', commander: 'main',
   sideboard: 'side', side: 'side', companion: null, maybeboard: null, considering: null, about: null };
 
@@ -15,7 +18,7 @@ const merge = (rows) => {
 export function parseDeck(text) {
   const boards = { main: [], side: [] };
   let board = 'main', headers = false, skipped = 0;
-  for (const raw of text.split(/\r?\n/).slice(0, 400)) {
+  for (const raw of cutLines(text).slice(0, MAX_ROWS)) {
     const line = raw.trim();
     const section = line.replace(/^\/\/\s*/, '').replace(/\s*\(\d+\)$/, '').replace(/:$/, '').toLowerCase();
     if (section in SECTIONS) { board = SECTIONS[section]; headers = true; continue; }
@@ -58,10 +61,11 @@ export async function fetchDeck(url) {
   const site = SITES.find((s) => s.match.test(url));
   try {
     const deck = site.read(await getJson(site.url(url.match(site.match)[1])));
-    return { main: merge(deck.main.map(({ qty, name }) => ({ qty, name }))), side: merge(deck.side.map(({ qty, name }) => ({ qty, name }))), skipped: 0 };
+    const board = (rows) => merge(rows.slice(0, MAX_ROWS).map(({ qty, name }) => ({ qty, name })));
+    return { main: board(deck.main), side: board(deck.side), skipped: 0 };
   } catch (e) {
     console.error(e);
-    throw `Couldn’t load that deck from ${site.name} (is it public?). Paste or upload the list instead.`;
+    throw new UserError(`Couldn’t load that deck from ${site.name} (is it public?). Paste or upload the list instead.`);
   }
 }
 

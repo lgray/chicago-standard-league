@@ -3,14 +3,23 @@ import { readFileSync, mkdirSync, realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { seasonFor, key, standings, metagame, matrix, parseStandings, parsePairings } from './lib.js';
+import { UserError, seasonFor, key, standings, metagame, matrix, parseStandings, parsePairings } from './lib.js';
 import { parseDeck, formatDeck, importable, fetchDeck, checkDeck } from './decks.js';
 
 const { LEAGUE_CODE, ADMIN_CODE, DATA_DIR = './data', PORT = 8080, DEMO, NO_CARD_CHECK } = process.env;
 if (!LEAGUE_CODE || !ADMIN_CODE) throw new Error('Set LEAGUE_CODE and ADMIN_CODE (see README).');
+// Nothing throttles guesses, so the admin code's length is the whole defence against brute force.
+if (ADMIN_CODE.length < 12 || ADMIN_CODE === LEAGUE_CODE) throw new Error('ADMIN_CODE must be at least 12 characters and differ from LEAGUE_CODE.');
 
 const MAX_BODY = 8e6, MAX_PHOTO = 1.5e6, MAX_PHOTOS = 4, ROUNDS = 5;
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const QR_LIB = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+// 'unsafe-inline' is for style attributes only (bar widths); scripts get no inline allowance.
+const SECURITY_HEADERS = {
+  'content-security-policy': `default-src 'self'; script-src 'self' ${QR_LIB}; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
+  'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin',
+  'strict-transport-security': 'max-age=31536000', // browsers ignore it over plain http
+};
 
 mkdirSync(DATA_DIR, { recursive: true });
 export const db = new DatabaseSync(`${DATA_DIR}/league.db`);
@@ -33,11 +42,16 @@ db.exec(`
     entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
     board TEXT NOT NULL CHECK (board IN ('main','side')), qty INTEGER NOT NULL, name TEXT NOT NULL);
   CREATE INDEX IF NOT EXISTS cards_entry ON cards (entry_id);
-  -- ponytail: photos live in SQLite so one file is the whole backup; move to object storage past a few GB.
-  CREATE TABLE IF NOT EXISTS photos (
-    id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    caption TEXT, mime TEXT NOT NULL, data BLOB NOT NULL);
 `);
+// AUTOINCREMENT: a deleted photo's id is never handed out again, because /img/:id is cached as immutable.
+// ponytail: photos live in SQLite so one file is the whole backup; move to object storage past a few GB.
+const PHOTOS = `photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  caption TEXT, mime TEXT NOT NULL, data BLOB NOT NULL)`;
+db.exec(`CREATE TABLE IF NOT EXISTS ${PHOTOS}`);
+if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'photos' AND sql LIKE '%AUTOINCREMENT%'").get())
+  db.exec(`BEGIN; ALTER TABLE photos RENAME TO photos_old; CREATE TABLE ${PHOTOS};
+    INSERT INTO photos SELECT * FROM photos_old; DROP TABLE photos_old; COMMIT`);
 // Columns added after the first release; each fails harmlessly once the column exists.
 for (const col of ['entries ADD deck_warnings TEXT', 'rounds ADD opp_key TEXT', 'rounds ADD verified INTEGER NOT NULL DEFAULT 0'])
   try { db.exec(`ALTER TABLE ${col}`); } catch {}
@@ -74,7 +88,7 @@ ${DEMO ? html`<div class="demo">Prototype — the players, results and photos be
   return new Response(doc.s, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
 }
 
-const fail = (status, msg) => page('Oops', '', html`<section class="card narrow"><h1>${status === 404 ? 'Not found' : 'That didn’t go through'}</h1><p>${msg}</p><p><a href="javascript:history.back()">← Go back</a></p></section>`, status);
+const fail = (status, msg) => page('Oops', '', html`<section class="card narrow"><h1>${status === 404 ? 'Not found' : 'That didn’t go through'}</h1><p>${msg}</p><p><a href="/" data-back>← Go back</a></p></section>`, status);
 
 // ---------- queries ----------
 const entriesBetween = (from, to) => db.prepare(
@@ -293,20 +307,27 @@ function qrPage(url, origin) {
 <div class="flag" aria-hidden="true"><i></i><span>✶ ✶ ✶ ✶</span><i></i></div>
 <h1>Played Standard tonight?</h1><p>Report your deck and record for the Chicago Standard League.</p>
 <div class="qr" data-qr="${target}"></div><p><b>${store}</b><br><small>${target}</small></p>
-<p class="noprint"><button class="btn" type="button" onclick="print()">Print</button></p></section>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>`);
+<p class="noprint"><button class="btn" type="button" data-print>Print</button></p></section>
+<script src="${QR_LIB}" integrity="sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==" crossorigin="anonymous"></script>`);
 }
 
 // ---------- writes ----------
 const same = (a, b) => timingSafeEqual(...[a, b].map((s) => createHash('sha256').update(String(s)).digest()));
 const text = (form, k, max) => String(form.get(k) ?? '').trim().slice(0, max);
 const count = (form, k) => Math.min(15, Math.max(0, parseInt(form.get(k), 10) || 0));
+const realDate = (d) => { const t = new Date(`${d}T00:00:00Z`); return /^\d{4}-\d\d-\d\d$/.test(d) && !Number.isNaN(+t) && t.toISOString().startsWith(d); };
 const clean = (name) => name.trim().replace(/\s+/g, ' ').slice(0, 40);
+// A photo's type is read from its leading bytes; the uploader's label is not evidence.
+const sniff = (data) => {
+  const head = Buffer.from(data.subarray(0, 12)).toString('latin1');
+  return head.startsWith('\xff\xd8\xff') ? 'image/jpeg' : head.startsWith('\x89PNG\r\n\x1a\n') ? 'image/png'
+    : /^RIFF.{4}WEBP/s.test(head) ? 'image/webp' : null;
+};
 
 function eventId(form) {
   const date = text(form, 'date', 10), store = text(form, 'store', 60).replace(/\s+/g, ' ');
-  if (!/^\d{4}-\d\d-\d\d$/.test(date) || Number.isNaN(Date.parse(date)) || date > today()) throw 'Pick a valid event date that isn’t in the future.';
-  if (!store) throw 'Tell us which store the event was at.';
+  if (!realDate(date) || date > today()) throw new UserError('Pick a valid event date that isn’t in the future.');
+  if (!store) throw new UserError('Tell us which store the event was at.');
   // Match an existing store case-insensitively so one typo'd capital doesn't split an event.
   return db.prepare(`INSERT INTO events (date, store, store_key) VALUES (?, ?, ?)
     ON CONFLICT (date, store_key) DO UPDATE SET store = store RETURNING id`)
@@ -320,26 +341,23 @@ function transaction(work) {
 
 async function submittedDeck(form, deckUrl) {
   const file = form.get('deckfile');
-  if (file?.size > 20000) throw 'That deck file is too large to be a decklist.';
+  if (file?.size > 20000) throw new UserError('That deck file is too large to be a decklist.');
   const pasted = file?.size ? await file.text() : text(form, 'decklist', 20000);
   const deck = pasted ? parseDeck(pasted) : deckUrl && importable(deckUrl) ? await fetchDeck(deckUrl) : null;
   if (!deck) return null;
-  if (!deck.main.length) throw 'No cards recognised in that list. Use one card per line, like “4 Burst Lightning”.';
+  if (!deck.main.length) throw new UserError('No cards recognised in that list. Use one card per line, like “4 Burst Lightning”.');
   return checkDeck(deck, ...(NO_CARD_CHECK ? [async () => null] : []));
 }
 
 async function report(form) {
-  if (!same(form.get('code'), LEAGUE_CODE)) throw 'That league code isn’t right — it’s pinned in the league Discord.';
+  if (!same(form.get('code'), LEAGUE_CODE)) throw new UserError('That league code isn’t right — it’s pinned in the league Discord.');
   const player = clean(text(form, 'player', 80));
-  if (!player) throw 'Add your name.';
+  if (!player) throw new UserError('Add your name.');
   const deckUrl = text(form, 'deck_url', 200);
-  if (deckUrl && !/^https:\/\/\S+$/.test(deckUrl)) throw 'Deck link must start with https://';
+  if (deckUrl && !/^https:\/\/\S+$/.test(deckUrl)) throw new UserError('Deck link must start with https://');
   const photos = form.getAll('photos').filter((f) => f.size);
-  if (photos.length > MAX_PHOTOS) throw `Up to ${MAX_PHOTOS} photos per report.`;
-  for (const f of photos) {
-    if (!PHOTO_TYPES.includes(f.type)) throw 'Photos must be JPEG, PNG or WebP.';
-    if (f.size > MAX_PHOTO) throw 'Each photo must be under 1.5 MB (the form shrinks them automatically when JavaScript is on).';
-  }
+  if (photos.length > MAX_PHOTOS) throw new UserError(`Up to ${MAX_PHOTOS} photos per report.`);
+  if (photos.some((f) => f.size > MAX_PHOTO)) throw new UserError('Each photo must be under 1.5 MB (the form shrinks them automatically when JavaScript is on).');
   const rounds = [];
   for (let i = 0; i < ROUNDS; i++) {
     const opp = text(form, `opp${i}`, 40), result = form.get(`res${i}`);
@@ -348,8 +366,9 @@ async function report(form) {
   const tally = (r) => rounds.filter(([, , x]) => x === r).length;
   const [wins, losses, draws] = rounds.length ? ['W', 'L', 'D'].map(tally) : ['wins', 'losses', 'draws'].map((k) => count(form, k));
   const archetype = text(form, 'archetype', 40);
-  const blobs = await Promise.all(photos.map(async (f) => [f.type, new Uint8Array(await f.arrayBuffer())]));
-  if (!archetype && !blobs.length) throw 'Add your deck archetype (or at least a photo).';
+  const blobs = await Promise.all(photos.map(async (f) => { const data = new Uint8Array(await f.arrayBuffer()); return [sniff(data), data]; }));
+  if (blobs.some(([mime]) => !mime)) throw new UserError('Photos must be JPEG, PNG or WebP.');
+  if (!archetype && !blobs.length) throw new UserError('Add your deck archetype (or at least a photo).');
   const checked = archetype ? await submittedDeck(form, deckUrl) : null;
 
   return transaction(() => {
@@ -378,7 +397,7 @@ async function report(form) {
 }
 
 function admin(form) {
-  if (!same(form.get('code'), ADMIN_CODE)) throw 'Wrong admin code.';
+  if (!same(form.get('code'), ADMIN_CODE)) throw new UserError('Wrong admin code.');
   for (const [field, table] of [['del_entry', 'entries'], ['del_photo', 'photos']]) {
     if (!form.get(field)) continue;
     db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(form.get(field));
@@ -389,8 +408,8 @@ function admin(form) {
 
   if (form.get('do') === 'pairings') {
     const rows = parsePairings(text(form, 'pairings', 20000)), round = count(form, 'round') - 1;
-    if (!rows.length) throw 'No pairings recognised. Each line needs “Player A vs Player B 2-1” or “Player C bye”.';
-    if (round < 0) throw 'Which round is this?';
+    if (!rows.length) throw new UserError('No pairings recognised. Each line needs “Player A vs Player B 2-1” or “Player C bye”.');
+    if (round < 0) throw new UserError('Which round is this?');
     return transaction(() => {
       const event = eventId(form), touched = new Set();
       const put = (name, opp, result) => {
@@ -411,7 +430,7 @@ function admin(form) {
   }
 
   const rows = parseStandings(text(form, 'standings', 20000));
-  if (!rows.length) throw 'No standings rows recognised. Each line needs a name followed by a W-L or W-L-D record.';
+  if (!rows.length) throw new UserError('No standings rows recognised. Each line needs a name followed by a W-L or W-L-D record.');
   return transaction(() => {
     const event = eventId(form);
     for (const r of rows) db.prepare('UPDATE entries SET wins = ?, losses = ?, draws = ?, verified = 1 WHERE id = ?')
@@ -425,17 +444,42 @@ const assets = Object.fromEntries([['/style.css', 'text/css'], ['/app.js', 'text
   .map(([p, type]) => [p, [readFileSync(new URL(`../public${p}`, import.meta.url)), type]]));
 const redirect = (to) => new Response(null, { status: 303, headers: { location: to } });
 
+const POSTS = { '/report': async (form) => `/events/${await report(form)}`, '/admin': admin };
+
+// The form, or the page that says why not. content-length is the sender's claim and is absent on a chunked
+// body, so the cap counts the bytes read.
+async function readForm(req) {
+  const tooLarge = () => fail(413, 'That upload is too large.');
+  if (!(+req.headers.get('content-length') <= MAX_BODY)) return tooLarge();
+  let size = 0;
+  const capped = req.body?.pipeThrough(new TransformStream({
+    transform(chunk, c) {
+      size += chunk.byteLength;
+      if (size > MAX_BODY) c.error(new Error('body over MAX_BODY')); else c.enqueue(chunk);
+    } }));
+  try {
+    return await new Response(capped, { headers: { 'content-type': req.headers.get('content-type') ?? '' } }).formData();
+  } catch {
+    return size > MAX_BODY ? tooLarge() : fail(400, 'That form could not be read. Go back and submit it again.');
+  }
+}
+
 export async function handle(req) {
+  const res = await route(req);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.headers.set(name, value);
+  return res;
+}
+
+async function route(req) {
   const url = new URL(req.url), p = url.pathname;
-  if (req.method === 'POST') {
-    // ponytail: no rate limit; the league code is the gate. Add one at the ingress if the code leaks.
-    if (!(+req.headers.get('content-length') <= MAX_BODY)) return fail(413, 'That upload is too large.');
+  if (req.method === 'POST' && POSTS[p]) {
+    // ponytail: no rate limit; the codes are the gate. Add one at the ingress if the league code leaks.
+    const form = await readForm(req);
+    if (form instanceof Response) return form;
     try {
-      const form = await req.formData();
-      if (p === '/report') return redirect(`/events/${await report(form)}`);
-      if (p === '/admin') return redirect(admin(form));
+      return redirect(await POSTS[p](form));
     } catch (e) {
-      if (typeof e === 'string') return fail(400, e);
+      if (e instanceof UserError) return fail(400, e.message);
       throw e;
     }
   }
@@ -447,29 +491,34 @@ export async function handle(req) {
   if (p === '/events') return eventsPage();
   if (p === '/report') return reportPage(url);
   if (p === '/admin') return adminPage();
-  if (p === '/qr') return qrPage(url, `${req.headers.get('x-forwarded-proto') ?? 'http'}://${url.host}`);
+  if (p === '/qr') return qrPage(url, `${/^https\b/.test(req.headers.get('x-forwarded-proto')) ? 'https' : 'http'}://${url.host}`);
   if (p === '/rules') return page('Rules', '/rules', new Raw(readFileSync(new URL('../public/rules.html', import.meta.url), 'utf8')));
   if (p === '/healthz') return new Response('ok');
   const m = p.match(/^\/(events|img)\/(\d+)$/);
   if (m?.[1] === 'events') return eventPage(m[2]);
   if (m) {
     const photo = db.prepare('SELECT mime, data FROM photos WHERE id = ?').get(m[2]);
-    if (photo) return new Response(photo.data, { headers: { 'content-type': photo.mime, 'cache-control': 'max-age=31536000, immutable', 'x-content-type-options': 'nosniff' } });
+    if (photo) return new Response(photo.data, { headers: { 'content-type': photo.mime, 'cache-control': 'max-age=31536000, immutable' } });
   }
   return fail(404, 'Nothing lives at this address.');
 }
 
-// realpath: Node resolves symlinks for the main module, and ConfigMap mounts are symlinks.
-if (import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
-  http.createServer(async (req, res) => {
-    try {
-      const body = req.method === 'POST' ? { body: req, duplex: 'half' } : {};
-      const r = await handle(new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, { method: req.method, headers: req.headers, ...body }));
-      res.writeHead(r.status, Object.fromEntries(r.headers));
-      res.end(Buffer.from(await r.arrayBuffer()));
-    } catch (e) {
-      console.error(e);
-      res.writeHead(500).end('Internal error');
-    }
-  }).listen(PORT, () => console.log(`Chicago Standard League on http://localhost:${PORT}`));
+export async function listener(req, res) {
+  let request;
+  try { // throws on what a web Request cannot express: TRACE, an unparseable Host
+    request = new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`,
+      { method: req.method, headers: req.headers, body: req.method === 'POST' ? req : null, duplex: 'half' });
+  } catch { return res.writeHead(400).end('Bad request'); }
+  try {
+    const r = await handle(request);
+    res.writeHead(r.status, Object.fromEntries(r.headers));
+    res.end(Buffer.from(await r.arrayBuffer()));
+  } catch (e) {
+    console.error(e);
+    res.writeHead(500).end('Internal error');
+  }
 }
+
+// realpath: Node resolves symlinks for the main module, and ConfigMap mounts are symlinks.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href)
+  http.createServer(listener).listen(PORT, () => console.log(`Chicago Standard League on http://localhost:${PORT}`));

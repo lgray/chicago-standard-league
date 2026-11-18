@@ -7,6 +7,7 @@
 - [Deployment](#deployment)
 - [Deck and results intake](#deck-and-results-intake)
 - [Repository and CI](#repository-and-ci)
+- [Security audit](#security-audit)
 
 ## Research: comparable leagues
 2026-11-11.
@@ -77,3 +78,24 @@ source mounted from a ConfigMap, because no image had been pushed to a registry 
   it would rewrite the dense house style. `noDescendingSpecificity` is off (flat stylesheet, unrelated components).
 - `main` is protected (PR required, `required` status check, no force-push or deletion; admins may bypass).
 - MIT licence, chosen by the owner 2026-11-17.
+
+## Security audit
+2026-11-18. Whole-app audit driven through `handle` and the real `node:http` server; fixes on branch `security-hardening`.
+- Fixed: the 8 MB POST cap trusted `content-length`, so a chunked body was buffered whole (one 200 MB request took
+  the server to 841 MB RSS against a 256 Mi limit); the cap now counts bytes read. Also: security headers and a CSP
+  with no inline script, SRI on the cdnjs QR script, photo type taken from magic bytes, parser line cap (pairings
+  regex was cubic in a run of spaces), imported decks capped like pasted ones, pod `seccompProfile` and no API token.
+- Checked and sound: `html` escaping in every context used, bound SQL parameters throughout (interpolated SQL is
+  constants only), constant-time code comparison, no ambient credentials so no CSRF, outbound URLs built from a
+  captured numeric id.
+- No throttle on code guesses (about 5,000 admin guesses/s in-process). A limiter needs a trusted client address
+  the app does not have, and a global lockout would let anyone block organizers, so the defence is entropy: the
+  server refuses to start unless `ADMIN_CODE` is 12+ characters and differs from `LEAGUE_CODE`. An ingress rate
+  limit is still worth adding.
+- Also closed in the same change: HSTS (one year, host only), `photos.id` is `AUTOINCREMENT` (a deleted id was
+  reused while `/img/:id` is cached `immutable`, so a removed photo could show in a new one's slot; old databases
+  are rebuilt once at startup), dates must exist on the calendar (`2026-02-31` was accepted), the adapter answers
+  400 instead of 500 for `TRACE` or an unparseable `Host`, user-facing errors are `UserError` instead of thrown strings.
+- Open: EXIF/GPS survives when the browser-side re-encode does not run (JavaScript off); a server-side strip has
+  to keep orientation, so it is a segment walker per format. Reported by the audit, not reproduced here: Scryfall
+  answers "fire // ice" as not found, so split cards normalised by `parseDeck` draw a spurious "Unrecognised" warning.

@@ -36,8 +36,13 @@ packages, a bundler or a framework; there is no `npm install` step anywhere (Doc
   startup; new columns are added by the `ALTER TABLE` list beside it, which must stay re-runnable.
 - `src/lib.js` is pure league math and text parsers (points, Wilson intervals, matchup matrix, standings and
   pairings parsers). `src/decks.js` is decklist parsing, deck-site import and the Scryfall check. Both are unit-tested;
-  `server.js` is covered by the seed run.
-- Trust model: anyone with `LEAGUE_CODE` can report; `ADMIN_CODE` gates `/admin`. Organizer imports set
+  `server.js` is covered by the seed run and, for its security behaviour, by `test/server.test.js`, which drives `handle`.
+- Every response gets the headers in `SECURITY_HEADERS`. The CSP allows no inline script, so pages must not use
+  `on*=` attributes or `javascript:` links; wire behaviour in `public/app.js` through `data-*` attributes.
+- A message for the person who submitted a form is thrown as `UserError` (`src/lib.js`) and becomes a 400 page;
+  anything else thrown is a bug and becomes a 500. Biome rejects throwing a bare string.
+- Trust model: anyone with `LEAGUE_CODE` can report; `ADMIN_CODE` gates `/admin` and must be at least 12
+  characters and differ from `LEAGUE_CODE` (checked at startup; there is no rate limit). Organizer imports set
   `verified` on entries and rounds; a later self-report can add a deck to such an entry but never changes its
   verified record or rounds.
 - The matchup matrix counts each match once even when both players report it (dedupe per event, round and pairing

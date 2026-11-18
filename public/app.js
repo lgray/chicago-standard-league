@@ -24,8 +24,10 @@ try {
 } catch { /* storage blocked: the field just starts empty */ }
 
 document.addEventListener('click', (e) => {
-  if (!e.target.matches('[data-copy]')) return;
-  navigator.clipboard.writeText(e.target.previousElementSibling.textContent).then(() => { e.target.textContent = 'Copied'; });
+  const t = e.target;
+  if (t.matches('[data-print]')) print();
+  else if (t.matches('[data-back]')) { e.preventDefault(); history.back(); }
+  else if (t.matches('[data-copy]')) navigator.clipboard.writeText(t.previousElementSibling.textContent).then(() => { t.textContent = 'Copied'; });
 });
 
 const qr = document.querySelector('[data-qr]');
